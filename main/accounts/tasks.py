@@ -1,4 +1,4 @@
-from .item_control import Items
+from .item_control import Items,ItemSerializer
 from .models import Item,Rating
 from celery import shared_task
 from rest_framework.request import Request
@@ -10,14 +10,21 @@ import redis
 r = redis.Redis(host="localhost",port=6379,db=0)
 
 @shared_task
+def set_like_to_item(uset_id,item_id):
+    try:
+        user = get_object_or_404(User,id=uset_id)
+    except Exception:
+        return {"err":f"User with id:{uset_id} does not exists!"}
+    return Items(user).like_item(item_id)
+
+@shared_task
 def set_rating_to_item(user_id,item_id,value):
     try :
         user = get_object_or_404(User,id=user_id)
         item = get_object_or_404(Item,id=item_id)
         return Items(user).item_set_rating(item,value)
     except Exception as e:
-        return f"User and Item with this id {user_id},{item_id} does not exists"
-    
+        return f"User and Item with this id {user_id},{item_id} does not exists"    
 
 @shared_task
 def set_item(user_id,title,text):
@@ -26,6 +33,69 @@ def set_item(user_id,title,text):
         return Items(user).set_item(title,text)
     except Exception as e:
         return {"err":f"user with id:{user_id} does not exists"}
+
+@shared_task
+def set_recomend_tops():
+    
+    r.delete("top_ids")
+    r.delete("top:*")
+    
+    items = Item.objects.all()
+    items_with_ratings = []
+    for item in items:
+        item_ratings = item.ratings.all().values_list("value",flat=True)
+        item_rating = sum(item_ratings) / len(item_ratings) if item_ratings else 0
+        items_with_ratings.append({
+            "id":item.id,
+            "rating":item_rating
+        })
+    sorted_items = sorted(items_with_ratings,key=lambda x:x["rating"],reverse=True)
+    
+    r.rpush("top_ids",*[i['id'] for i in sorted_items])
+    for i in sorted_items:
+        r.hset(f"top:{i['id']}",mapping=i)
+    
+    top_items_list = []
+    for i in sorted_items:
+        item = Item.objects.get(id=i["id"])
+        item = ItemSerializer(item).data
+        item['rating'] = i["rating"]
+        print(item)
+        top_items_list.append(item)
+
+class Admin_panel:
+    is_admin = False
+    def __init__(self):
+        pass
+    def check(self,request:Request):
+        user:User = request.user
+        if user.is_superuser:
+            self.is_admin = True
+            return True
+        else:
+            return False
+    def test_sort_items(self):
+        if not self.is_admin:
+            return False
+        set_recomend_tops.delay()
+        return True
+    def get_top(self):
+        if not self.is_admin:
+            return False
+        top_ids = [ i.decode() for i in r.lrange("top_ids",0,-1)]
+        
+        result = []
+        for i in top_ids:
+            item_rating = r.hget(f"top:{i}","rating")
+            item_exists = Item.objects.filter(id=i).exists()
+            if not item_exists:
+                continue
+            item = ItemSerializer(Item.objects.get(id=i)).data
+            item['rating'] = item_rating
+            result.append(item)
+        return result
+            
+        
     
 class TasksControl:
     def __init__(self,request:Request):
@@ -64,4 +134,13 @@ class TasksControl:
         set_item.delay(self.request.user.id,title,text)
         
         return self.RESULT("Ваш запрос в обработке")
+    def control_set_like_to_item(self,item_id):
+        user_id = self.request.user.id
+        task = set_like_to_item.delay(user_id,item_id)
+        key = f"user:{user_id}:tasks"
         
+        r.sadd(key,task.id)
+        r.expire(key,3600)
+        
+        return self.RESULT("Ваш запрос в обработке!")
+    

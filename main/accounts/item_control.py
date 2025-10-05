@@ -10,6 +10,7 @@ class Items(Users):
     def __init__(self,user:User):
         super().setuser(user)
         pass
+        
     
     def set_item(self,title,text):
         # if not title or not text:
@@ -37,7 +38,10 @@ class Items(Users):
         })
     def like_item(self,id):
         user =self.user
-        item = get_object_or_404(Item,id=id)
+        try:
+            item = get_object_or_404(Item,id=id)
+        except Exception:
+            return self.RESULT({"err":f"Item with id:{id} is does not exists"},True)
         if not item.likes.filter(id=user.id).exists():
             item.likes.add(user)
             return self.RESULT(f"Лайк поставлен likes = {item.likes.count()}")
