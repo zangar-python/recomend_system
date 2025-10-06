@@ -34,9 +34,25 @@ class Recomend_control(Users):
     # def user_cosine_simular(self,user1,user2):
     #     cosine_simular = np.dot(user1,user2) / (np.linalg.norm(user1) * np.linalg.norm(user2))
     #     return f"Косинусное сходство {cosine_simular:.3f} "
+    def endpoint_recomend_save_sum(self,user):
+        key = f"user:{user.id}:endpoint"
+        sum = 0
+        if r.exists(key):
+            sum = int(r.get(key).decode())
+            sum = sum + 1
+        r.set(key,sum)
+        r.expire(key,(3600*24)*30)
+        return 
+    def endpoint_recomend_get(self,user):
+        key = f"user:{user.id}:endpoint"
+        if not r.exists(key):
+            return 0
+        return r.get(key).decode()
+    
     
     def recomend_item_by_user(self,user_id):
         user = get_object_or_404(User,id=user_id)
+        self.endpoint_recomend_save_sum(user)
         
         r1_key = f"user:{user.id}:recomend"
         for_u_key = f"user:{user.id}:for-you"
