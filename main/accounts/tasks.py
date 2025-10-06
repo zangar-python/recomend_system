@@ -7,6 +7,7 @@ from django.contrib.auth.models import User
 
 import redis 
 
+
 r = redis.Redis(host="localhost",port=6379,db=0)
 
 @shared_task
@@ -49,14 +50,13 @@ def set_recomend_tops():
             "id":item.id,
             "rating":item_rating
         })
-    sorted_items = sorted(items_with_ratings,key=lambda x:x["rating"],reverse=True)
     
-    r.rpush("top_ids",*[i['id'] for i in sorted_items])
-    for i in sorted_items:
+    r.rpush("top_ids",*[i['id'] for i in items_with_ratings])
+    for i in items_with_ratings:
         r.hset(f"top:{i['id']}",mapping=i)
     
     top_items_list = []
-    for i in sorted_items:
+    for i in items_with_ratings:
         item = Item.objects.get(id=i["id"])
         item = ItemSerializer(item).data
         item['rating'] = i["rating"]

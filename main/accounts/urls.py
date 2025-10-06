@@ -2,10 +2,11 @@ from django.urls import path,include
 from .user_views import UserLogin,UserRegister,UserProfile
 from .item_views import item_views,item_detail_views,set_like_to_item_views,add_rating_to_item_views
 from .admin_test_views import Test_Recomend_auto
-from .recomends_views import Get_Top_Resomend_Views
+from .recomends_views import Get_Top_Resomend_Views,Get_Recomend_Items_Views
 
 recomend_urls = [
-    path("",Get_Top_Resomend_Views.as_view(),name="top-items")
+    path("",Get_Top_Resomend_Views.as_view(),name="top-items"),
+    path("<int:user_id>/",Get_Recomend_Items_Views.as_view(),name="recomends")
 ]
 
 admin_urls = [
