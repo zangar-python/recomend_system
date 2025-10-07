@@ -1,16 +1,41 @@
 from django.contrib.auth.models import User
 from rest_framework.request import Request
 from rest_framework.serializers import ModelSerializer
-from .users_control import Users
+from .users_control import Users,UserSerializer
 from .models import Item,Rating
 from django.shortcuts import get_object_or_404
 
+from django.db.models.manager import BaseManager
+from django.db.models import Count,Prefetch
 
 class Items(Users):
     def __init__(self,user:User):
         super().setuser(user)
         pass
+    
+    def get_users(self):
+        users = User.objects.prefetch_related("likes")
+        users_likes = User.objects.prefetch_related("likes").values_list("likes","username")
+        obj = []
         
+        
+        for likes in users_likes:
+            
+            obj.append({
+                "user_likes":likes[0],
+                "username":likes[1]
+            })
+        # user_list = list(users)
+        # for user in user_list:
+        #     user.liked_items = user.likes.all().values_list("id",flat=True)
+        return {
+            "users":UserSerializer(users,many=True).data,
+            "users_likes":obj
+        }
+    
+    def get_items_one_sql(self):
+        items = Item.objects.select_related("author").prefetch_related("likes").annotate(likes_count=Count("likes")).filter(likes_count__gt=1)
+        return ItemSerializer(items,many=True).data
     
     def set_item(self,title,text):
         # if not title or not text:
@@ -70,6 +95,11 @@ class Items(Users):
                 "rating":RatingSerializer(rating).data
             }
         )
+    def user_items_get(self):
+        my_items = ItemSerializer(Item.objects.select_related("author").filter(author__id=self.user.id),many=True).data
+        return self.RESULT({
+            "my_items":my_items
+        })
         
     
 class ItemSerializer(ModelSerializer):

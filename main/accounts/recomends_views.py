@@ -16,3 +16,6 @@ class Get_Recomend_Items_Views(APIView):
 class Get_end_point(APIView):
     def get(self,request:Request,user_id):
         return Response(Recomend_control(request).endpoint_recomend_get(user=get_object_or_404(User,id=user_id)))
+class Get_similar_users_views(APIView):
+    def get(self,request:Request,user_id):
+        return Response(Recomend_control(request).get_similar_users(user_id))

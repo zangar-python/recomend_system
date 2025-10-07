@@ -1,12 +1,13 @@
 import redis
 # from rest_framework.request import Request
-from .users_control import Users,User
+from .users_control import Users,User,UserSerializer
 from .models import Item,Rating
 from .item_control import ItemSerializer
 from django.shortcuts import get_object_or_404
 from rest_framework.serializers import ModelSerializer
 from django.db.models.manager import BaseManager
 
+from .tasks import TasksControl
 # import numpy as np
 
 r = redis.Redis()
@@ -49,6 +50,12 @@ class Recomend_control(Users):
             return 0
         return r.get(key).decode()
     
+    def get_similar_users(self,user_id):
+        if not User.objects.filter(id=user_id).exists():
+            return {"err":f'User with id:{user_id} not founded'}
+        users_id = [i.decode() for i in r.smembers(f"user:{user_id}:similar-users")]
+        users = User.objects.prefetch_related("likes").filter(id__in=users_id)
+        return UserSerializer(users,many=True).data
     
     def recomend_item_by_user(self,user_id):
         user = get_object_or_404(User,id=user_id)
@@ -72,7 +79,7 @@ class Recomend_control(Users):
         
         owr_users_ranged_it = []
         user_ranged_items = []
-        
+        print("TEST 1")
         if not exists1:
             r.delete(r1_key)
             
@@ -84,11 +91,15 @@ class Recomend_control(Users):
                 }
         
             owr_users_ranged_it = Rating.objects.filter(item__in=user_ranged_items,value__gte=4).exclude(user=user).values_list("user",flat=True)
+            print("TEST 2")
+            TasksControl.control_set_similar_users(user.id,[i.id for i in User.objects.filter(id__in=owr_users_ranged_it)])
+            print("TEST 5")
             owr_ratinged_items_id = Rating.objects.filter(user__in=owr_users_ranged_it,value__gte=4).exclude(item__in=user_ranged_items).values_list("item",flat=True)
-            recomend_items = Item.objects.filter(id__in=owr_ratinged_items_id).distinct().order_by("-created_at")[:10]
+            recomend_items = Item.objects.select_related("author").filter(id__in=owr_ratinged_items_id).distinct().order_by("-created_at")[:10]
             
             r.rpush(r1_key,*[i.id for i in recomend_items])
             r.expire(r1_key,3600)
+            print("TEST 7")
         else:
             r_1 = [i.decode() for i in r.lrange(r1_key,0,-1)]
             recomend_items = Item.objects.filter(id__in=r_1).distinct().order_by("-created_at")
@@ -98,21 +109,22 @@ class Recomend_control(Users):
             liked_items = Item.objects.filter(likes__in=owr_users_ranged_it).exclude(id__in=user_ranged_items).distinct().order_by("-created_at")[:10]
             r.rpush(for_u_key,*[i.id for i in liked_items])
             r.expire(for_u_key,3600)
+            print("TEST 8")
         else:
+            
             for_u = [i.decode() for i in r.lrange(for_u_key,0,-1)]
-            liked_items = Item.objects.filter(id__in=for_u).distinct().order_by("-created_at")          
+            liked_items = Item.objects.filter(id__in=for_u).distinct().order_by("-created_at")         
+            
         if not exists3:
             r.delete(b_liked_key)
             r.delete(b_ranked_key)
             
             by_liked_items = self.item_recomend_by_likes(user)
             
-            b_liked = by_liked_items['liked_items_recomend'][:10]
-            b_ranked = by_liked_items['ranked_items_recomend'][:10]
-            r.rpush(b_liked_key,*[i['id'] for i in b_liked])
-            r.expire(b_liked_key,3600)
-            r.rpush(b_ranked_key,*[i['id'] for i in b_ranked])
-            r.expire(b_ranked_key,3600)
+            b_liked = by_liked_items['liked_items_recomend']
+            b_ranked = by_liked_items['ranked_items_recomend']
+            
+            print("TEST 10")
         else:
             b_liked_id = [ i.decode() for i in r.lrange(b_liked_key,0,-1)]
             b_ranked_id = [ i.decode() for i in r.lrange(b_ranked_key,0,-1)]
@@ -121,6 +133,7 @@ class Recomend_control(Users):
             b_ranked = ItemSerializer(Item.objects.filter(id__in=b_ranked_id).distinct().order_by("-created_at"),many=True).data
         
         # return RatingSerializer(owr_ratinged_items_id,many=True).data
+        print("TEST FINALY")
         return {
             "recomend":ItemSerializer(recomend_items,many=True).data,
             "for_you":ItemSerializer(liked_items,many=True).data,
@@ -131,20 +144,38 @@ class Recomend_control(Users):
         }
         # return owr_ratinged_items_id
     def item_recomend_by_likes(self,user:User):
+        print("TEST 1111")
+        b_liked_key = f"user:{user.id}:liked"
+        b_ranked_key = f"user:{user.id}:ranked"
+        
+        r.delete(b_liked_key)
+        r.delete(b_ranked_key)
+        print("DELETED")
+        
         liked_items:BaseManager[Item] = user.likes.all()
         
         if not liked_items.exists():
+            print("TEST 1112")
             return {
                 "liked_items_recomend":[],
                 "ranked_items_recomend":[]
             }
-        
+        print("TEST 1113")
         users_likes_it = User.objects.filter(likes__in=liked_items)
-        liked_items_recomend:BaseManager[Item] = Item.objects.filter(likes__in=users_likes_it).exclude(id__in=liked_items.values_list("id",flat=True)).order_by("-created_at")
+        print("TEST 1114")
+        TasksControl.control_set_similar_users(user.id,users=[i.id for i in users_likes_it])
+        print("TEST 1115")
+        liked_items_recomend:BaseManager[Item] = Item.objects.select_related("author").filter(likes__in=users_likes_it).exclude(id__in=liked_items.values_list("id",flat=True)).order_by("-created_at")[:10]
         # users_likes_it.likes.all().exclude(liked_items).order_by("-created-at")
         id_items_ranked = Rating.objects.filter(user__in=users_likes_it).exclude(item__in=liked_items)
-        ranked_items_recomend = Item.objects.filter(id__in=id_items_ranked).order_by("-created_at")
+        ranked_items_recomend = Item.objects.select_related("author").filter(id__in=id_items_ranked).order_by("-created_at")[:10]
         
+        r.rpush(b_liked_key,*[i.id for i in liked_items_recomend])
+        r.expire(b_liked_key,3600)
+        r.rpush(b_ranked_key,*[i.id for i in ranked_items_recomend])
+        r.expire(b_ranked_key,3600)
+        
+        print("TEST 1116")
         return {
             "liked_items_recomend":ItemSerializer(liked_items_recomend,many=True).data,
             "ranked_items_recomend":ItemSerializer(ranked_items_recomend,many=True).data

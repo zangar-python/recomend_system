@@ -11,6 +11,13 @@ import redis
 r = redis.Redis(host="localhost",port=6379,db=0)
 
 @shared_task
+def set_similar_users(user_id,users):
+    # print(users)
+    print("TEST 4")
+    key = f"user:{user_id}:similar-users"
+    r.sadd(key,*users)
+
+@shared_task
 def set_like_to_item(uset_id,item_id):
     try:
         user = get_object_or_404(User,id=uset_id)
@@ -110,6 +117,12 @@ class TasksControl:
             "data":data,
             "error":err
         }
+    @staticmethod
+    def control_set_similar_users(user_id,users):
+        print("TEST 3")
+        set_similar_users.delay(user_id,users)
+        return True
+        
     def control_set_rating_to_item(self,id):
         value = self.request.data.get("value")
         if not value:

@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from .users_control import Users
 from rest_framework.permissions import AllowAny
+from .item_control import Items
 
 class UserRegister(APIView):
     permission_classes = [AllowAny]
@@ -19,3 +20,6 @@ class UserProfile(APIView):
         users_control.setuser(request.user)
         return Response(users_control.get_user())
     
+class users_get_views(APIView):
+    def get(self,request:Request):
+        return Response(Items(request.user).get_users())

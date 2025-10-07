@@ -17,3 +17,10 @@ class add_rating_to_item_views(APIView):
 class set_like_to_item_views(APIView):
     def post(self,request:Request,id):
         return Response( Items(request.user).like_item(id) )
+class Test_filter_query(APIView):
+    def get(self,request:Request):
+        return Response(Items(request.user).get_items_one_sql())
+
+class My_Items_Views(APIView):
+    def get(self,request:Request):
+        return Response(Items(request.user).user_items_get())
