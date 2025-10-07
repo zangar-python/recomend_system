@@ -14,7 +14,8 @@ class Items(Users):
         pass
     
     def get_users(self):
-        users = User.objects.prefetch_related("likes")
+        users = User.objects.prefetch_related("likes").annotate(ratings_count=Count("ratings",distinct=True),likes_count=Count("likes",distinct=True),item_counts=Count("my_items",distinct=True)).values("username","email","id","likes_count","item_counts","ratings_count")
+        users_lists = list(users)
         users_likes = User.objects.prefetch_related("likes").values_list("likes","username")
         obj = []
         
@@ -29,13 +30,23 @@ class Items(Users):
         # for user in user_list:
         #     user.liked_items = user.likes.all().values_list("id",flat=True)
         return {
-            "users":UserSerializer(users,many=True).data,
+            "users":users_lists,
             "users_likes":obj
         }
     
     def get_items_one_sql(self):
         items = Item.objects.select_related("author").prefetch_related("likes").annotate(likes_count=Count("likes")).filter(likes_count__gt=1)
-        return ItemSerializer(items,many=True).data
+        
+        qs = Item.objects.select_related("author").annotate(likes_count=Count("likes")).values("id","title","likes_count")
+        qs_items = list(qs)
+        
+        for item in qs_items:
+            item['extra_fields'] = "Connected is this extres"
+        
+        return {
+            "items-with-extras":qs_items,
+            "items":ItemSerializer(items,many=True).data
+        }
     
     def set_item(self,title,text):
         # if not title or not text:
